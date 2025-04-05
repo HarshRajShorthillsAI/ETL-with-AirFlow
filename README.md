@@ -1,4 +1,4 @@
-# 🛠️ Airflow ETL Pipeline with Docker, Celery, Redis, and PostgreSQL
+# 📊💻⚙️ Airflow ETL Pipeline with Docker, Celery, Redis, and PostgreSQL
 
 This project demonstrates a fully functional **ETL pipeline using Apache Airflow**, containerized with **Docker Compose**, and backed by **CeleryExecutor**, **Redis** as broker, and **PostgreSQL** as the metadata database.
 
@@ -15,14 +15,14 @@ This project demonstrates a fully functional **ETL pipeline using Apache Airflow
 ---
 
 ## 📁 Project Structure
-
+```bash
 ├── dags/ # Contains Airflow DAGs
 │ └── etl_example.py # Example ETL DAG
 ├── docker-compose.yml # Multi-service setup for Airflow
 ├── .env # Secrets and environment config
 ├── requirements.txt # (Optional) extra Python packages
 └── README.md # Project documentation
-
+```
 
 ---
 
@@ -110,7 +110,7 @@ Password:  admin
 
 - Click the DAG name to view execution details and task instances
 
-## Tear down
+## 🧹📦 Tear down
 To stop and remove all containers:
 ```bash
 docker-compose down
