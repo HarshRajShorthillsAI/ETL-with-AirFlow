@@ -1,120 +1,121 @@
-import os
 import dotenv
-from src.ingestion import *
-from airflow.decorators import dag, task
 from datetime import datetime, timedelta
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+
+from src.ingestion import Ingestion
 
 dotenv.load_dotenv()
 
-@dag(schedule=None, default_args={
-    'start_date': datetime(2023, 1, 1),  # Set an appropriate start date for your DAG
-    'retries': 1,
-    'retry_delay': timedelta(minutes=5)
-}, catchup=False, 
-    tags=['pyspark', 'data_transformation'])
-def etl_example():
-    
-    dotenv.load_dotenv('/app/.env')
-    import logging
-    logging.info([ os.getenv("DB_NAME"),
-            "localhost",
-            os.getenv("DB_PORT"),
-            os.getenv("DB_TABLE"),
-            os.getenv("DB_SCHEMA"),
-            os.getenv("DB_USER"),
-            os.getenv("DB_PASS"),])
-    logging.info( os.path.join(os.path.dirname(__file__))  )
 
-    DATA_PATH = "/opt/airflow/data/CRS_Datafeed_2025-02-28_1/"
+class SparkETLDag:
 
-    
-    
-    @task
-    def load_csv_data(data_path=DATA_PATH):
-        """
-        Loads csv file from docker into pyspark dataframe
-        """
-        return load_data(data_path)
+    def __init__(self):
+        self.dag_id = 'spark_etl_dag'
+        self.schedule_interval = '@daily'
+        self.start_date = datetime(2024, 4, 1)
+        self.catchup = False
+        self.ingestion = Ingestion()
 
-    @task
-    def rename_trim_table_data(parquet_path:str):
-        """
-        Loads csv file from docker into pyspark dataframe
-        """
-        print(f"inside rename trim table")
-        return rename_trim_table(parquet_path)
+        self.default_args = {
+            'owner': 'admin',
+            'depends_on_past': False,
+            'email': ['harsh.raj@shorthills.ai'],
+            'email_on_failure': False,
+            'email_on_retry': False,
+            'retries': 1,
+            'retry_delay': timedelta(minutes=5),
+        }
 
-    @task
-    def extract_country_from_feature_table_data(parquet_path:str):
-        """
-        Loads csv file from docker into pyspark dataframe
-        """
-        return extract_country_from_feature_table(parquet_path)
+        self.dag = DAG(
+            dag_id=self.dag_id,
+            default_args=self.default_args,
+            description='ETL pipeline using Spark with PythonOperator',
+            schedule_interval=self.schedule_interval,
+            start_date=self.start_date,
+            catchup=self.catchup,
+            tags=['spark', 'etl'],
+        )
 
-    @task
-    def extract_options_for_trimId_data(parquet_path:str):
-        """
-        Loads csv file from docker into pyspark dataframe
-        """
-        return extract_options_for_trimId(parquet_path)
+    def create_dag(self):
+        with self.dag:
 
-    @task
-    def extract_features_for_trimId_data(parquet_path:str):
-        """
-        Loads csv file from docker into pyspark dataframe
-        """
-        return extract_features_for_trimId(parquet_path)
+            load_trims_data = PythonOperator(
+                task_id='load_trims_data',
+                python_callable=self.ingestion.load_data,
+                op_kwargs={"key_":"Trims"}
+            )
 
-    @task
-    def extract_meta_for_TrimId_data(parquet_path:str):
-        """
-        Loads csv file from docker into pyspark dataframe
-        """
-        return extract_meta_for_trimId(parquet_path)
+            rename_trim_table_data = PythonOperator(
+                task_id='rename_trim_table',
+                python_callable=self.ingestion.rename_trim_table,
+            )
 
-    @task
-    def extract_feature_detail_values_data(parquet_path:str):
-        """
-        Loads csv file from docker into pyspark dataframe
-        """
-        return extract_feature_detail_values(parquet_path)
+            load_features_data = PythonOperator(
+                task_id='load_features_data',
+                python_callable=self.ingestion.load_data,
+                op_kwargs={"key_":"Features"}
+            )
 
-    @task
-    def join_tables_data(dataframe_1_path, dataframe_2_path, cols, join_type):
-        """
-        Loads csv file from docker into pyspark dataframe
-        """
-        return join_tables(dataframe_1_path, dataframe_2_path, cols, join_type)
+            extract_country = PythonOperator(
+                task_id='extract_country_from_feature_table_data',
+                python_callable=self.ingestion.extract_country_from_feature_table,
+            )
 
-    @task
-    def generate_output_data(data):
-        """
-        Loads csv file from docker into pyspark dataframe
-        """
-        return generate_output(data)
-    
-    # @task
-    # def print_output(output_data):
-    #     with open('output.json', 'w') as f:
-    #         json.dump(output_data, f, indent=4)
+            extract_options = PythonOperator(
+                task_id='extract_options_for_trimId_data',
+                python_callable=self.ingestion.extract_options_for_trimId,
+            )
 
-    # Invoke functions to create tasks and define dependencies
-    # write_to_db_task(extract_and_load_task())
-    parquet_path = load_csv_data()
-    print(f"running rename trims table data now...")
-    trims_table_path = rename_trim_table_data(parquet_path)
-    country_table_path = extract_country_from_feature_table_data(parquet_path)
-    # options_path = extract_options_for_trimId_data(parquet_path)
-    feature_path = extract_features_for_trimId_data(parquet_path)
-    meta_path = extract_meta_for_TrimId_data(parquet_path)
-    details_path = extract_feature_detail_values_data(parquet_path)
-    grouped_data_path = join_tables_data(trims_table_path, country_table_path, cols=['TrimId'], join_type="full")
-    grouped_data_path = join_tables_data(grouped_data_path, country_table_path, cols=['TrimId', 'countries'], join_type="full")
-    # grouped_data_path = join_tables_data(grouped_data_path, options_path, cols=['TrimId'], join_type="full")
-    grouped_data_path = join_tables_data(grouped_data_path, feature_path, cols=['TrimId'], join_type='full')
-    grouped_data_path = join_tables_data(grouped_data_path, meta_path, cols=['TrimId'], join_type='full')
-    grouped_data_path = join_tables_data(grouped_data_path, details_path, cols=['TrimId'], join_type='full')
-    generate_output_data(grouped_data_path)
-    # print_output(grouped_data_path)
+            extract_features = PythonOperator(
+                task_id='extract_features_for_trimId_data',
+                python_callable=self.ingestion.extract_features_for_trimId,
+            )
 
-etl_example()
+            extract_meta = PythonOperator(
+                task_id='extract_meta_for_TrimId_data',
+                python_callable=self.ingestion.extract_meta_for_trimId,
+            )
+
+            extract_feature_values = PythonOperator(
+                task_id='extract_feature_detail_values_data',
+                python_callable=self.ingestion.extract_feature_detail_values,
+            )
+
+            join_1 = PythonOperator(
+                task_id='all_join_table_data_1',
+                python_callable=self.ingestion.join_operations_part_1,
+            )
+
+            join_2 = PythonOperator(
+                task_id='all_join_table_data_2',
+                python_callable=self.ingestion.join_operations_part_2,
+            )
+
+            join_3 = PythonOperator(
+                task_id="all_join_table_data_3",
+                python_callable=self.ingestion.join_operations_part_3
+            )
+
+            # generate_output_task = PythonOperator(
+            #     task_id='generate_output',
+            #     python_callable=self.ingestion.generate_output
+            # )
+
+            # # Task dependencies
+            # load_csv_data >> rename_trim_table_data >> [extract_country, extract_feature_values]
+            # extract_country >> extract_meta
+            # extract_feature_values >> extract_features
+            # extract_features >> extract_options
+            # [extract_meta, extract_options] >> join_1 >> join_2 >> generate_output_task
+
+            load_trims_data >> rename_trim_table_data >> load_features_data >> [extract_country, extract_feature_values]
+            extract_country >> extract_meta
+            extract_feature_values >> extract_features
+            extract_features >> extract_options
+            [ extract_meta, extract_options ] >> join_1 >> join_2 >> join_3
+
+        return self.dag
+
+# Instantiate and assign the DAG object to a variable for Airflow to detect
+dag = SparkETLDag().create_dag()
