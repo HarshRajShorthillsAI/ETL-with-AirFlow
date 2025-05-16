@@ -1,81 +1,23 @@
-# version: '3'
-# services:
-#   postgres:
-#     image: postgres:13
-#     environment:
-#       - POSTGRES_USER=airflow
-#       - POSTGRES_PASSWORD=airflow
-#       - POSTGRES_DB=airflow
-#     volumes:
-#       - postgres_db:/var/lib/postgresql/data
-#     ports:
-#       - "5432:5432"
-
-#   airflow-webserver:
-#     build: .
-#     restart: always
-#     environment:
-#       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-#       - AIRFLOW__CORE__LOAD_EXAMPLES=False
-#       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
-#       # Set a Fernet key for encryption; generate one if you haven't:
-#       - AIRFLOW__CORE__FERNET_KEY=${FERNET_KEY}
-#       - PYTHONPATH=/opt/airflow  # Ensure this directory is in your Python path
-#     depends_on:
-#       - postgres
-#     volumes:
-#       - ./airflow/dags:/opt/airflow/dags
-#       - ./airflow/logs:/opt/airflow/logs
-#       - ./airflow/plugins:/opt/airflow/plugins
-#       - ./data:/opt/airflow/data
-#       - ./src:/opt/airflow/src
-#       - ./.env:/app/.env
-#     ports:
-#       - "8080:8080"
-#     command: webserver
-
-#   airflow-scheduler:
-#     build: .
-#     restart: always
-#     environment:
-#       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-#       - AIRFLOW__CORE__LOAD_EXAMPLES=False
-#       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
-#       - AIRFLOW__CORE__FERNET_KEY=${FERNET_KEY}
-#       - PYTHONPATH=/opt/airflow  # Ensure this directory is in your Python path  
-#     depends_on:
-#       - postgres
-#     volumes:
-#       - ./airflow/dags:/opt/airflow/dags
-#       - ./airflow/logs:/opt/airflow/logs
-#       - ./airflow/plugins:/opt/airflow/plugins
-#       - ./data:/opt/airflow/data
-#       - ./src:/opt/airflow/src
-#       - ./.env:/app/.env
-#     command: scheduler
-
-# volumes:
-#   postgres_db:
-
-version: '3'
 x-airflow-common:
   &airflow-common
+  image: apache/airflow:2.8.1-python3.9
   build:
     context: .
-    dockerfile: Dockerfile  # Use the custom Dockerfile
+    dockerfile: Dockerfile
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
-    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
-    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+    AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${FERNET_KEY}
+    AIRFLOW__WEBSERVER__RBAC: 'True'
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
-    AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__API__AUTH_BACKEND: 'airflow.api.auth.backend.basic_auth'
-    JAVA_HOME: "/usr/lib/jvm/java-11-openjdk-amd64"  # Ensure Java is available for PySpark
+    JAVA_HOME: "/usr/lib/jvm/java-11-openjdk-amd64"
     PYTHONPATH: "/opt/airflow:/opt/airflow/src"
-    
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
@@ -83,7 +25,7 @@ x-airflow-common:
     - ./data:/opt/airflow/data
     - ./src:/opt/airflow/src
     - ./.env:/app/.env
-  user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-50000}"
+  user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}"
   depends_on:
     redis:
       condition: service_healthy
@@ -108,7 +50,7 @@ services:
   redis:
     image: redis:latest
     ports:
-      - 6379:6379
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -116,11 +58,23 @@ services:
       retries: 50
     restart: always
 
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command: -c "airflow db upgrade && airflow users create --username ${_AIRFLOW_WWW_USER_USERNAME:-airflow} --password ${_AIRFLOW_WWW_USER_PASSWORD:-airflow} --firstname Admin --lastname User --role Admin --email admin@example.com"
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_UPGRADE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+    depends_on:
+      - postgres
+      - redis
+
   airflow-webserver:
     <<: *airflow-common
     command: webserver
     ports:
-      - 8080:8080
+      - "8080:8080"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
       interval: 10s
@@ -138,21 +92,11 @@ services:
     command: celery worker
     restart: always
 
-  airflow-init:
-    <<: *airflow-common
-    command: version
-    environment:
-      <<: *airflow-common-env
-      _AIRFLOW_DB_UPGRADE: 'true'
-      _AIRFLOW_WWW_USER_CREATE: 'true'
-      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
-      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
-
   flower:
     <<: *airflow-common
     command: celery flower
     ports:
-      - 5555:5555
+      - "5555:5555"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:5555/"]
       interval: 10s

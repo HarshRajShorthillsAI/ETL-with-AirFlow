@@ -304,12 +304,11 @@ class Ingestion:
         # spark.stop()
         return output_path
 
-
     def join_operations_part_1(self):
         self.join_tables(f"{self.LOADED_JSON}/Trims.json", f"{self.LOADED_JSON}/countries.json", cols=["TrimId"], join_type="full")
         self.join_tables(f"{self.OUTPUT_DIR}/grouped_data.json", f"{self.LOADED_JSON}/Trims.json", cols=["TrimId"], join_type="full")
         return f"{self.OUTPUT_DIR}/grouped_data.json"
-        
+
     def join_operations_part_2(self):
         self.join_tables(f"{self.OUTPUT_DIR}/grouped_data.json", f"{self.LOADED_JSON}/Features.json", cols=["TrimId"], join_type="full")
         self.join_tables(f"{self.OUTPUT_DIR}/grouped_data.json", f"{self.LOADED_JSON}/meta.json", cols=["TrimId"], join_type="full")
